@@ -80,19 +80,7 @@ const int Pump = S0;
 IoTTimer pumpTimer;  //IoTTimer is the class and pumpTimer is an object, or instance, of that class
 Adafruit_NeoPixel pixel(PIXELCOUNT, SPI1, WS2812B); //Adafruit_NeoPixel is the class, pixel is the object, or instance, and can use mothods like pixel.begin() and pixel.setpixelcolor(). The first argument, PIXELCOUNT is defined below as a constant integer.
 Adafruit_BME280 bme;
-
-/************Declare Functions*************/
-void MQTT_connect();
-bool MQTT_ping();
-void printDetail(uint8_t type, int value);//Tells compiler a function named printDetail exists. Semicolon indicates it is only a declaration. when printDetail() is called it has two arguments (parameters), uint8_t is unsigned 8-bit integer and int is integer 
-void displayNFCData();
-bool countDown(bool restart = false, int countStart = 60);//bool is the return type, countdown is the name of the function and will return a datatype of true/false
-void PixelFill (int startP, int endP, int color);
-
-
-/************Declare Variable Declarations*************/
-
-Button startCountdown(D3);//Button is class/type and startCountdown is a variable and D3 is the argument
+Button startCountdown(D3);//Button is class/type and startCountdown is the object and D3 is the argument
 AirQualitySensor sensor(A1); //so confused???????? A0?
 DFRobotDFPlayerMini myDFPlayer;//Default constructor (specicialized function initializes and doesn't need a value like a pin number, because it uses a default value from library
 TM1637 tm1637(CLK,DIO);
@@ -102,6 +90,15 @@ Adafruit_SSD1306 display(OLED_RESET);
 DFRobot_PN532_IIC nfc(PN532_IRQ, POLLING);
 uint8_t dataRead[16] = {0};//unit8_t is datatype of variable, dataRead declares name of array that can hold 16 elements, the 0 initializes the array with the first element as 0 (zero initialization of array)
 
+
+/************Declare Functions*************/
+void MQTT_connect();
+bool MQTT_ping();
+void printDetail(uint8_t type, int value);//Tells compiler a function named printDetail exists. Semicolon indicates it is only a declaration. when printDetail() is called it has two arguments (parameters), uint8_t is unsigned 8-bit integer and int is integer 
+void displayNFCData();
+bool countDown(bool restart = false, int countStart = 60);//bool is the return type, countdown is the name of the function and will return a datatype of true/false
+void PixelFill (int startP, int endP, int color);
+
 // Let Device OS manage the connection to the Particle Cloud
 SYSTEM_MODE(SEMI_AUTOMATIC);
 
@@ -109,9 +106,8 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 void setup() {
   Serial.begin(9600); //Enables serial monitor
   waitFor(Serial.isConnected, 10000);  //wait for Serial monitor. Serial, not serial1 is the USB main connection.
-  Serial1.begin(9600);//Should this go one line above? Enables MP3?
-  //waitFor(Serial1.isConnected, 10000); why no member named is connected for serial 1?
-  delay(1000); //Don't see a need for a delay?
+  Serial1.begin(9600);//Begins Serial 1, but no handshake needed
+  //delay(1000); //Don't see a need for a delay?
 
 status = bme.begin(hexAddressBME);
   if (status == false) {
@@ -169,12 +165,6 @@ status = bme.begin(hexAddressBME);
 pinMode (AUOT,INPUT);//Used global variable instead of A2
 pinMode (Pump,OUTPUT);
 }
-
-
-
-
-
-
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
@@ -269,16 +259,16 @@ void displayNFCData() {
     color = 0X000FF;
 
    for (i=0; i<19; i++) { //order: initiallization, condition, incremement--where to start, where do you want to go, how do you want to get there
-    //pixel.setPixelColor (i,color);
-    //pixel.show();
+    pixel.setPixelColor (i,color);
+    pixel.show();
     digitalWrite (Pump,HIGH); 
     delay (500);
     digitalWrite (Pump,LOW);
     
   }
 
-  //pixel.clear();
-  //pixel.show();
+  pixel.clear();
+  pixel.show();
   
   display.clearDisplay();
   display.setTextSize(2);
