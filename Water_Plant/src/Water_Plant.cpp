@@ -36,11 +36,11 @@ Adafruit_MQTT_SPARK mqtt(&TheClient,AIO_SERVER,AIO_SERVERPORT,AIO_USERNAME,AIO_K
 /****************************** Feeds ***************************************/ 
 // Setup Feeds to publish or subscribe 
 // Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>//must include /feeds/ before the feedname!
-Adafruit_MQTT_Publish soilMoisture = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/soilMoisture");
-Adafruit_MQTT_Publish roomTemperature = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomEnvironment");
-Adafruit_MQTT_Publish roomHumidity = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomHumidity");
-Adafruit_MQTT_Publish roomPressure = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomPressure");
-Adafruit_MQTT_Publish airQuality = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/airQuality");
+Adafruit_MQTT_Publish pubFeedsoilMoisture = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/soilMoisture");
+Adafruit_MQTT_Publish pubFeedroomTemperatue = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomTemperature");
+Adafruit_MQTT_Publish pubFeedroomHumidity = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomHumidity");
+Adafruit_MQTT_Publish pubFeedroomPressure = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomPressure");
+Adafruit_MQTT_Publish pubFeedairQuality = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/airQuality");
 Adafruit_MQTT_Subscribe dashboardButton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/dashboardButton");
 
 /************Declare Variables*************/
@@ -71,7 +71,7 @@ const int OLED_RESET=-1; //OLED_RESET is the name of the constant variable, it's
 const int hexAddressBME = 0x76; //I2C address of BME sensor. I2C can have 128 connections and the hexidicimal maps it.
 const char degree = 0xF8;
 const char percent = 0x25;
-const int AUOT = A2; //is this int or float and may need to use D pin. Moisture sensor.
+const int AUOT = A2; // Moisture sensor
 String dateTime, timeOnly;
 const int Pump = S0;
 
@@ -94,7 +94,6 @@ bool nfcScanned = false;//declared variable nfcScanned, but initializes with val
 Adafruit_SSD1306 display(OLED_RESET);
 DFRobot_PN532_IIC nfc(PN532_IRQ, POLLING);
 uint8_t dataRead[16] = {0};//unit8_t is datatype of variable, dataRead declares name of array that can hold 16 elements, the 0 initializes the array with the first element as 0 (zero initialization of array)
-
 
 /************Declare Functions*************/
 void MQTT_connect();
@@ -128,6 +127,10 @@ status = bme.begin(hexAddressBME);
     pixel.show(); //initialize all pixels off
     pixel.clear();
 
+  myDFPlayer.begin(Serial1); //Initializes MP3 player
+  
+  Serial.printf("DFRobot DFPlayer Mini Demo\n");
+  Serial.printf("Initializing DFPlayer ... (May take 3~5 seconds)\n");
 
   // Connect to Internet but not Particle Cloud
    WiFi.on();
@@ -141,18 +144,12 @@ status = bme.begin(hexAddressBME);
     mqtt.subscribe(&dashboardButton);
     Time.zone (-7); //MST = -7, MDT = -6
     Particle.syncTime(); //Sync time with Particle Cloud
-
-  myDFPlayer.begin(Serial1);
-  
-  Serial.printf("DFRobot DFPlayer Mini Demo\n");
-  Serial.printf("Initializing DFPlayer ... (May take 3~5 seconds)\n");
-
   
     tm1637.init();
     tm1637.set(7);
     tm1637.point(POINT_ON);
 
-    keepCounting = false;
+    keepCounting = false; //Initializes to 0 or off
 
   while (!nfc.begin()) {
     Serial.printf("NFC initialization failed. Retrying...\n");
@@ -160,60 +157,75 @@ status = bme.begin(hexAddressBME);
   }
     Serial.printf("NFC initialized. Waiting for a card...\n");
 
-pinMode (AUOT,INPUT);//Used global variable instead of A2
-pinMode (Pump,OUTPUT);
+pinMode (AUOT,INPUT);//  Moisture sensor
+pinMode (Pump,OUTPUT); //  Relay that controls water pump
 
 }
 
-// loop() runs over and over again, as quickly as it can execute.
 void loop() {
   
-  MQTT_connect();
-  MQTT_ping();
+  MQTT_connect(); //Called in void loop to keep connection alive
+  MQTT_ping();  //Called in void loop to keep connection alive
   
   dateTime = Time.timeStr(); //Current date/time from Particle
   timeOnly = dateTime.substring (11,19); //Extract Time from DataTime String
   if(millis()-lastTime>10000) {
   lastTime = millis();
   Serial.printf("Date and time is %s\n",dateTime.c_str());
-   
-  
+
+  // Read sensor data
+  Moisture = analogRead(AUOT); // Read moisture sensor
+  tempC = bme.readTemperature(); // Read temperature in Celsius
+  pressPA = bme.readPressure(); // Read pressure in Pascals
+  humidRH = bme.readHumidity(); // Read humidity in %RH
+
+  // Convert temperature to Fahrenheit and pressure to inHg
+  tempF = ((tempC * 9 / 5) + 32);
+  inHg = (pressPA * 0.00029529983071445);
+
+  // Check if soil moisture is below threshold and start countdown
+  if (Moisture < 2600) {
+    countDown(true, 600000); // Start countdown with a value of ten minutes
+    keepCounting = true;   // Set flag to keep counting down
+    nfcScanned = false;    // Reset NFC scan flag
+    myDFPlayer.volume(30); // Set volume for audio feedback
+    myDFPlayer.playFolder(1, 1); // Play an audio file
+    Serial.printf("Moisture level low. Starting countdown...\n");
+  }
+
+  // Continue counting down if the flag is set
+  if (keepCounting) {
+    keepCounting = countDown(); // Continue countdown
+    if (!keepCounting) {        // If countdown finishes
+      Serial.printf("Countdown complete.\n");
+      if (!nfcScanned && Moisture < 2400) { // If NFC not scanned and moisture still low
+        myDFPlayer.volume(30);              // Set volume for audio feedback
+        myDFPlayer.playFolder(1, 2);        // Play another audio file
+        Serial.printf("NFC not scanned and moisture still low.\n");
+      }
+    }
+  }
+}
+
   // this is our 'wait for incoming subscription packets' busy subloop 
   Adafruit_MQTT_Subscribe *subscription;
   while ((subscription = mqtt.readSubscription(100))) {
     if (subscription == &dashboardButton) {
       webButtonState = atoi((char *)dashboardButton.lastread);
-      //Serial.printf("button=%i\n",webButtonState);
+      Serial.printf("button=%i\n",dashboardButton);
     }
     
-    if (webButtonState == 1 && Moisture<2600) {
-      Serial.printf("button is pressed\n");
+    if (webButtonState == 1 && Moisture<2600) { //This ensures that plant is not overwatered 
+      Serial.printf("Drinking\n");
       digitalWrite(Pump,HIGH);
+      
     }
     
     if (webButtonState == 0) {
-      Serial.printf("button is UnPressed\n");
+      Serial.printf("Water Stopped\n");
       digitalWrite(Pump,LOW);
       }
     }
-  
-  if((millis()-lastTime > 6000)) {
-    if(mqtt.Update()) {
-      soilMoisture.publish(Moisture);
-      Serial.printf("Soil Moisture is %i \n",Moisture); 
-      } 
-    lastTime = millis();
-  }
-
-  tempC = bme.readTemperature(); //deg C
-  pressPA = bme.readPressure(); //pascals
-  humidRH = bme.readHumidity(); // %RH
-
-  Moisture=analogRead(AUOT); //Read moisture sensor
-  
-  currentTime = millis();
-  tempF = ((tempC*9/5)+32); //Assigning value to global float tempF. If "float" added it will run a local iteration of float, which negates declaring them as floats in the header. It's also confusing because I have no idea if the global variable is being used or the local variable, especially problematic with more code.
-  inHg = (pressPA*0.00029529983071445); //Assigning value to global float inHg
   
   if ((currentTime-lastSecond)>500) { //half second
     lastSecond = millis ();
@@ -248,34 +260,28 @@ void loop() {
     }
   
   
-  if (startCountdown.isClicked()) {
-    countDown(true, 6); //testing change to 600
+  if (Moisture<2600) {
+    countDown(true, 600000);
     keepCounting = true;
     nfcScanned = false; //Reset NFC scan flag
-    myDFPlayer.volume(0); // Mute the player when starting a new countdown
+    myDFPlayer.volume(30); // Start the player when countdown begins
+    myDFPlayer.playFolder(1, 1);
 }
+
 if (keepCounting) {
       keepCounting = countDown();
     if (!keepCounting) {
       Serial.printf("Countdown is complete\n");
-    if (!nfcScanned) {
-      myDFPlayer.volume(20); //Set volume to 30 if NFC not scanned
-      myDFPlayer.playFolder(1, 1); //Plays the first MP3 in folder 1
+    if (!nfcScanned && Moisture<2400) {
+      myDFPlayer.volume(30); //Set volume to 30 if NFC not scanned
+      myDFPlayer.playFolder(1, 2); //Plays the second MP3 in folder 1
       }  
     }
-  }
+}
 
   static unsigned long lastNfcScanTime = 0;
   unsigned long currentTime = millis();
-
-  if (currentTime - lastNfcScanTime >= 100) { // 100ms delay between scans to reduce power consumption
-    lastNfcScanTime = currentTime; 
-  
-  if (nfc.scan()) {
-    nfcScanned = true; // Set NFC scan flag
-    myDFPlayer.volume(10); // Lower volume when NFC scanned, but still finish the track 
-   
- 
+    
   if (nfc.readData(dataRead, READ_BLOCK_NO) == 1) {
     Serial.printf("Block %d read success!\n", READ_BLOCK_NO);
     Serial.printf("Data read (string): %s\n", (char *)dataRead);
@@ -284,42 +290,52 @@ if (keepCounting) {
   else {
     Serial.printf("Block %d read failure!\n", READ_BLOCK_NO);
     }
-   }
+
+  if (currentTime - lastNfcScanTime >= 100) { // 100ms delay between scans to reduce power consumption
+    lastNfcScanTime = currentTime; 
+  
+  if (nfc.scan() && Moisture<2600) {
+    nfcScanned = true; // Set NFC scan flag
+    digitalWrite (Pump,HIGH);
+    pumpTimer.startTimer (500);
+  }
+  if (digitalRead(Pump) == HIGH && pumpTimer.isTimerReady()) {
+    digitalWrite (Pump,LOW); //turn off the pump after 500ms
+  }
+  }
+
+    if((millis()-lastTime > 6000)) {
+    if (mqtt.Update()) { //Make sure MQTT connection is active
+      Moisture = analogRead (A2);
+      pubFeedsoilMoisture.publish(Moisture);
+      Serial.printf("Publishing %i \n", Moisture);
+      pubFeedairQuality.publish(quality);
+      pubFeedroomHumidity.publish(humidRH);
+      pubFeedroomPressure.publish(inHg);
+      pubFeedroomTemperatue.publish(tempF);
+      } 
+    
+    lastTime = millis();
+  
   }
 }
-
-
-void displayNFCData() {
+  
+  void displayNFCData() {
     
-    color = 0X000FF;
+  color = 0X000FF;
 
    for (i=0; i<19; i++) { //order: initiallization, condition, incremement--where to start, where do you want to go, how do you want to get there
     pixel.setPixelColor (i,color);
     pixel.show();
-    
   }
-}
 
   pixel.clear();
   pixel.show();
   
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(0, 32);
-  display.printf("%s\n", (char *)dataRead);
-  display.display();
-  delay(5000);
-
-  display.clearDisplay();
-  display.setTextSize(3);
-  display.setCursor(12, 8);
-  display.printf("Great\n Job!\n");
-  display.display();
-  delay(1800);
-}
+  }
 
 bool countDown(bool restart, int countStart) {
-  static int count = 60;
+  static int count = 600000;
   static unsigned long lastTime = 0;
 
   if (restart) {
@@ -346,11 +362,8 @@ bool countDown(bool restart, int countStart) {
   if (count <= 0) {
     return false;
   }
-
   return true;
-} 
-
-
+}
 
 void MQTT_connect() { //Outside the void loop
   int8_t ret;
@@ -370,37 +383,6 @@ void MQTT_connect() { //Outside the void loop
         }
    Serial.printf("MQTT Connected!\n");
  }
-
-bool MQTT_ping() {
-  static unsigned int last;
-  bool pingStatus;
-
-  if ((millis()-last)>120000) {
-    Serial.printf("Pinging MQTT \n");
-     pingStatus = mqtt.ping();
-   if(!pingStatus) {
-      Serial.printf("Disconnecting \n");
-       mqtt.disconnect();
-      }
-     last = millis();
-  }
-  return pingStatus;
-}
-
-void MQTT_connect() {
-    int8_t ret;
-    if (mqtt.connected()) {
-        return;
-    }
-  Serial.print("Connecting to MQTT... ");
-  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
-       Serial.printf("Error Code %s\n",mqtt.connectErrorString(ret));
-       Serial.printf("Retrying MQTT connection in 5 seconds...\n");
-       mqtt.disconnect();
-       delay(5000);  // wait 5 seconds and try again
-  }
-  Serial.printf("MQTT Connected!\n");
-}
 
 bool MQTT_ping() {
   static unsigned int last;
