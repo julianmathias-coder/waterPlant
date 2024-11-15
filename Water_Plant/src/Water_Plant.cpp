@@ -37,11 +37,14 @@ Adafruit_MQTT_SPARK mqtt(&TheClient,AIO_SERVER,AIO_SERVERPORT,AIO_USERNAME,AIO_K
 // Setup Feeds to publish or subscribe 
 // Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>//must include /feeds/ before the feedname!
 Adafruit_MQTT_Publish soilMoisture = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/soilMoisture");
-Adafruit_MQTT_Publish roomEnvironment = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomEnvironment");
-//Adafruit_MQTT_Subscribe subFeedButton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/IoT14_buttonOnOff");
+Adafruit_MQTT_Publish roomTemperature = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomEnvironment");
+Adafruit_MQTT_Publish roomHumidity = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomHumidity");
+Adafruit_MQTT_Publish roomPressure = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/roomPressure");
+Adafruit_MQTT_Publish airQuality = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/airQuality");
+Adafruit_MQTT_Subscribe dashboardButton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/dashboardButton");
 
 /************Declare Variables*************/
-unsigned int lastTime; //unsigned means the value does not go negative. It will time out at approx 49 days.
+unsigned int last,lastTime; //unsigned means the value does not go negative. It will time out at approx 49 days.
 int quality;
 int bri = 35; //data type is int, bri is the name of the variable, and 35 is the initial value or assignment. bri is a mutable variable that can be changed later in the code.
 int color;
@@ -56,6 +59,8 @@ int currentTime;
 int lastSecond;
 int Moisture;
 int i;
+int webButtonState;
+
 
 /************Declare Constants*************/
 //Declorations are sequential, constants need to go before objects.
@@ -107,7 +112,6 @@ void setup() {
   Serial.begin(9600); //Enables serial monitor
   waitFor(Serial.isConnected, 10000);  //wait for Serial monitor. Serial, not serial1 is the USB main connection.
   Serial1.begin(9600);//Begins Serial 1, but no handshake needed
-  //delay(1000); //Don't see a need for a delay?
 
 status = bme.begin(hexAddressBME);
   if (status == false) {
@@ -125,30 +129,24 @@ status = bme.begin(hexAddressBME);
     pixel.clear();
 
 
-
-
-  //// Connect to Internet but not Particle Cloud
- // WiFi.on();
- // WiFi.connect();
- // while(WiFi.connecting()) {
- //   Serial.printf(".");
-// }
- // Serial.printf("\n\n");
+  // Connect to Internet but not Particle Cloud
+   WiFi.on();
+   WiFi.connect();
+   while(WiFi.connecting()) {
+    Serial.printf(".");
+   }
+   Serial.printf("\n\n");
 
   // Setup MQTT subscription
-  //mqtt.subscribe(&subFeedButton);
-  //mqtt.subscribe(&subFeedSlider);//need to have this for each MQTT subscription or nothing comes through feed
-  // Time.zone (-7); //MST = -7, MDT = -6
-  // Particle.syncTime(); //Sync time with Particle Cloud
+    mqtt.subscribe(&dashboardButton);
+    Time.zone (-7); //MST = -7, MDT = -6
+    Particle.syncTime(); //Sync time with Particle Cloud
 
   myDFPlayer.begin(Serial1);
   
   Serial.printf("DFRobot DFPlayer Mini Demo\n");
   Serial.printf("Initializing DFPlayer ... (May take 3~5 seconds)\n");
 
-  //WiFi.on();
-  //WiFi.clearCredentials();
-  //WiFi.setCredentials("IoTNetwork");
   
     tm1637.init();
     tm1637.set(7);
@@ -164,16 +162,54 @@ status = bme.begin(hexAddressBME);
 
 pinMode (AUOT,INPUT);//Used global variable instead of A2
 pinMode (Pump,OUTPUT);
+
 }
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
+  
+  MQTT_connect();
+  MQTT_ping();
+  
+  dateTime = Time.timeStr(); //Current date/time from Particle
+  timeOnly = dateTime.substring (11,19); //Extract Time from DataTime String
+  if(millis()-lastTime>10000) {
+  lastTime = millis();
+  Serial.printf("Date and time is %s\n",dateTime.c_str());
+   
+  
+  // this is our 'wait for incoming subscription packets' busy subloop 
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(100))) {
+    if (subscription == &dashboardButton) {
+      webButtonState = atoi((char *)dashboardButton.lastread);
+      //Serial.printf("button=%i\n",webButtonState);
+    }
+    
+    if (webButtonState == 1 && Moisture<2600) {
+      Serial.printf("button is pressed\n");
+      digitalWrite(Pump,HIGH);
+    }
+    
+    if (webButtonState == 0) {
+      Serial.printf("button is UnPressed\n");
+      digitalWrite(Pump,LOW);
+      }
+    }
+  
+  if((millis()-lastTime > 6000)) {
+    if(mqtt.Update()) {
+      soilMoisture.publish(Moisture);
+      Serial.printf("Soil Moisture is %i \n",Moisture); 
+      } 
+    lastTime = millis();
+  }
 
   tempC = bme.readTemperature(); //deg C
   pressPA = bme.readPressure(); //pascals
   humidRH = bme.readHumidity(); // %RH
 
-  Moisture=analogRead(AUOT);
+  Moisture=analogRead(AUOT); //Read moisture sensor
   
   currentTime = millis();
   tempF = ((tempC*9/5)+32); //Assigning value to global float tempF. If "float" added it will run a local iteration of float, which negates declaring them as floats in the header. It's also confusing because I have no idea if the global variable is being used or the local variable, especially problematic with more code.
@@ -195,8 +231,6 @@ void loop() {
     display.display();
     display.clearDisplay();
   }
-
-
 
   int quality = sensor.slope();
 
@@ -254,6 +288,7 @@ if (keepCounting) {
   }
 }
 
+
 void displayNFCData() {
     
     color = 0X000FF;
@@ -261,11 +296,9 @@ void displayNFCData() {
    for (i=0; i<19; i++) { //order: initiallization, condition, incremement--where to start, where do you want to go, how do you want to get there
     pixel.setPixelColor (i,color);
     pixel.show();
-    digitalWrite (Pump,HIGH); 
-    delay (500);
-    digitalWrite (Pump,LOW);
     
   }
+}
 
   pixel.clear();
   pixel.show();
@@ -318,10 +351,77 @@ bool countDown(bool restart, int countStart) {
 } 
 
 
+
+void MQTT_connect() { //Outside the void loop
+  int8_t ret;
+
+  //Return if already connected.
+  if (mqtt.connected()) {
+    return;
+  }
+ 
+ Serial.print("Connecting to MQTT... ");
+ 
+ while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
+       Serial.printf("Error Code %s\n",mqtt.connectErrorString(ret));
+       Serial.printf("Retrying MQTT connection in 5 seconds...\n");
+       mqtt.disconnect();
+      delay(5000);  // wait 5 seconds and try again
+        }
+   Serial.printf("MQTT Connected!\n");
+ }
+
+bool MQTT_ping() {
+  static unsigned int last;
+  bool pingStatus;
+
+  if ((millis()-last)>120000) {
+    Serial.printf("Pinging MQTT \n");
+     pingStatus = mqtt.ping();
+   if(!pingStatus) {
+      Serial.printf("Disconnecting \n");
+       mqtt.disconnect();
+      }
+     last = millis();
+  }
+  return pingStatus;
+}
+
+void MQTT_connect() {
+    int8_t ret;
+    if (mqtt.connected()) {
+        return;
+    }
+  Serial.print("Connecting to MQTT... ");
+  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
+       Serial.printf("Error Code %s\n",mqtt.connectErrorString(ret));
+       Serial.printf("Retrying MQTT connection in 5 seconds...\n");
+       mqtt.disconnect();
+       delay(5000);  // wait 5 seconds and try again
+  }
+  Serial.printf("MQTT Connected!\n");
+}
+
+bool MQTT_ping() {
+  static unsigned int last;
+  bool pingStatus;
+
+  if ((millis()-last)>120000) {
+      Serial.printf("Pinging MQTT \n");
+      pingStatus = mqtt.ping();
+      if(!pingStatus) {
+        Serial.printf("Disconnecting \n");
+        mqtt.disconnect();
+      }
+      last = millis();
+  }
+  return pingStatus;
+}
+
 //litPixel = ((PIXELCOUNT/3015)*Moisture);
   //if (tempF>90) {
     //pixel.clear();
-    //PixelFill (0, 15, red);
+    //PixelFill (0,litPixel,color); //corresponds with mositure
   //}
 
   //else (tempF<90) {
