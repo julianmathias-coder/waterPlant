@@ -74,6 +74,8 @@ const char percent = 0x25;
 const int AUOT = A2; // Moisture sensor
 String dateTime, timeOnly;
 const int Pump = S0;
+const int maxMoisture = 1173;
+const int minMoisture = 3015;
 
 //Define constants for NFC card reading
 #define PN532_IRQ 2
@@ -184,7 +186,7 @@ void loop() {
   inHg = (pressPA * 0.00029529983071445);
 
   // Check if soil moisture is below threshold and start countdown
-  if (Moisture < 2600) {
+  if (Moisture < 1600) {//half of the value after watered
     countDown(true, 600000); // Start countdown with a value of ten minutes
     keepCounting = true;   // Set flag to keep counting down
     nfcScanned = false;    // Reset NFC scan flag
@@ -198,7 +200,7 @@ void loop() {
     keepCounting = countDown(); // Continue countdown
     if (!keepCounting) {        // If countdown finishes
       Serial.printf("Countdown complete.\n");
-      if (!nfcScanned && Moisture < 2400) { // If NFC not scanned and moisture still low
+      if (!nfcScanned && Moisture < 386) { // If NFC not scanned and moisture still low
         myDFPlayer.volume(30);              // Set volume for audio feedback
         myDFPlayer.playFolder(1, 2);        // Play another audio file
         Serial.printf("NFC not scanned and moisture still low.\n");
@@ -215,7 +217,7 @@ void loop() {
       Serial.printf("button=%i\n",dashboardButton);
     }
     
-    if (webButtonState == 1 && Moisture<2600) { //This ensures that plant is not overwatered 
+    if (webButtonState == 1 && Moisture>1600) { //This ensures that plant is not overwatered 
       Serial.printf("Drinking\n");
       digitalWrite(Pump,HIGH);
       
@@ -260,24 +262,33 @@ void loop() {
     }
   
   
-  if (Moisture<2600) {
+  if (Moisture>1800) {
     countDown(true, 600000);
     keepCounting = true;
     nfcScanned = false; //Reset NFC scan flag
     myDFPlayer.volume(30); // Start the player when countdown begins
     myDFPlayer.playFolder(1, 1);
+    //litPixel = ((PIXELCOUNT/1600.0)*Moisture);
+    //PixelFill (0,litPixel,red); 
 }
 
 if (keepCounting) {
       keepCounting = countDown();
     if (!keepCounting) {
       Serial.printf("Countdown is complete\n");
-    if (!nfcScanned && Moisture<2400) {
+    if (!nfcScanned && Moisture>2400) {
       myDFPlayer.volume(30); //Set volume to 30 if NFC not scanned
       myDFPlayer.playFolder(1, 2); //Plays the second MP3 in folder 1
-      }  
+      //litPixel = ((PIXELCOUNT/1600.0)*Moisture);
+//for (int i=0; i<litPixel; litPixel++) {
+   //pixel.setPixelColor(i,red);
+//}
+    //pixel.show();
     }
-}
+    //pixel.clear();
+    //pixel.show(); 
+     }  
+    }
 
   static unsigned long lastNfcScanTime = 0;
   unsigned long currentTime = millis();
@@ -399,23 +410,3 @@ bool MQTT_ping() {
   }
   return pingStatus;
 }
-
-//litPixel = ((PIXELCOUNT/3015)*Moisture);
-  //if (tempF>90) {
-    //pixel.clear();
-    //PixelFill (0,litPixel,color); //corresponds with mositure
-  //}
-
-  //else (tempF<90) {
-   // pixel.clear();
-    //PixelFill (0, 15, blue);
-  //}  
-
-  //}
-
- //void PixelFill (int startP, int endP, int color) {
-  //for (int litPixel=startP; litPixel<endP; litPixel++)
-    //pixel.show();
-    //pixel.clear();
-   //pixel.show(); 
- //}
