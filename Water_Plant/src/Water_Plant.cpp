@@ -106,7 +106,7 @@ bool countDown(bool restart = false, int countStart = 60);//bool is the return t
 void PixelFill (int startP, int endP, int color);
 
 // Let Device OS manage the connection to the Particle Cloud
-SYSTEM_MODE(SEMI_AUTOMATIC);
+SYSTEM_MODE(AUTOMATIC);
 
 // setup() runs once, when the device is first turned on
 void setup() {
@@ -135,12 +135,12 @@ status = bme.begin(hexAddressBME);
   Serial.printf("Initializing DFPlayer ... (May take 3~5 seconds)\n");
 
   // Connect to Internet but not Particle Cloud
-   WiFi.on();
-   WiFi.connect();
-   while(WiFi.connecting()) {
-    Serial.printf(".");
-   }
-   Serial.printf("\n\n");
+  //  WiFi.on();
+  //  WiFi.connect();
+  //  while(WiFi.connecting()) {
+  //   Serial.printf(".");
+  //  }
+  //  Serial.printf("\n\n");
 
   // Setup MQTT subscription
     mqtt.subscribe(&dashboardButton);
@@ -174,6 +174,13 @@ void loop() {
   if(millis()-lastTime>10000) {
   lastTime = millis();
   Serial.printf("Date and time is %s\n",dateTime.c_str());
+    // display.setTextSize(1);
+    // display.setTextColor(WHITE);
+    // display.setCursor(0,16);
+    // display.printf("Date and time is %s\n",dateTime.c_str());
+    // display.clearDisplay();
+    // display.display();
+   
 
   // Read sensor data
   Moisture = analogRead(AUOT); // Read moisture sensor
@@ -184,50 +191,6 @@ void loop() {
   // Convert temperature to Fahrenheit and pressure to inHg
   tempF = ((tempC * 9 / 5) + 32);
   inHg = (pressPA * 0.00029529983071445);
-
-  // Check if soil moisture is below threshold and start countdown
-  if (Moisture < 1600) {//half of the value after watered
-    countDown(true, 600000); // Start countdown with a value of ten minutes
-    keepCounting = true;   // Set flag to keep counting down
-    nfcScanned = false;    // Reset NFC scan flag
-    myDFPlayer.volume(30); // Set volume for audio feedback
-    myDFPlayer.playFolder(1, 1); // Play an audio file
-    Serial.printf("Moisture level low. Starting countdown...\n");
-  }
-
-  // Continue counting down if the flag is set
-  if (keepCounting) {
-    keepCounting = countDown(); // Continue countdown
-    if (!keepCounting) {        // If countdown finishes
-      Serial.printf("Countdown complete.\n");
-      if (!nfcScanned && Moisture < 386) { // If NFC not scanned and moisture still low
-        myDFPlayer.volume(30);              // Set volume for audio feedback
-        myDFPlayer.playFolder(1, 2);        // Play another audio file
-        Serial.printf("NFC not scanned and moisture still low.\n");
-      }
-    }
-  }
-}
-
-  // this is our 'wait for incoming subscription packets' busy subloop 
-  Adafruit_MQTT_Subscribe *subscription;
-  while ((subscription = mqtt.readSubscription(100))) {
-    if (subscription == &dashboardButton) {
-      webButtonState = atoi((char *)dashboardButton.lastread);
-      Serial.printf("button=%i\n",dashboardButton);
-    }
-    
-    if (webButtonState == 1 && Moisture>1600) { //This ensures that plant is not overwatered 
-      Serial.printf("Drinking\n");
-      digitalWrite(Pump,HIGH);
-      
-    }
-    
-    if (webButtonState == 0) {
-      Serial.printf("Water Stopped\n");
-      digitalWrite(Pump,LOW);
-      }
-    }
   
   if ((currentTime-lastSecond)>500) { //half second
     lastSecond = millis ();
@@ -261,13 +224,56 @@ void loop() {
         Serial.printf("Fresh air. Quality: %i\n", quality);
     }
   
+  // Check if soil moisture is below threshold and start countdown
+  if ((Moisture>=1600)&&(Moisture<=1800)) {//half of the value after watered
+    countDown(true, 600); // Start countdown value
+    keepCounting = true;   // Set flag to keep counting down
+    nfcScanned = false;    // Reset NFC scan flag
+    //myDFPlayer.volume(1); // Set volume for audio feedback
+    //myDFPlayer.playFolder(1, 1); // Play an audio file
+    Serial.printf("Moisture level low. Starting countdown...\n");
+  }
+
+  // Continue counting down if the flag is set
+  if (keepCounting) {
+    keepCounting = countDown(); // Continue countdown
+    if (!keepCounting) {        // If countdown finishes
+      Serial.printf("Countdown complete.\n");
+      if (!nfcScanned && ((Moisture>=1600)&&(Moisture<=1800))) { // If NFC not scanned and moisture still low
+        myDFPlayer.volume(1);              // Set volume for audio feedback
+        myDFPlayer.playFolder(1, 2);        // Play another audio file
+        Serial.printf("NFC not scanned and moisture still low.\n");
+      }
+    }
+  }
+}
+
+  // this is our 'wait for incoming subscription packets' busy subloop 
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(100))) {
+    if (subscription == &dashboardButton) {
+      webButtonState = atoi((char *)dashboardButton.lastread);
+      Serial.printf("button=%i\n",dashboardButton);
+    }
+    
+    if (webButtonState == 1 && Moisture>=1600) { //This ensures that plant is not overwatered 
+      Serial.printf("Drinking\n");
+      digitalWrite(Pump,HIGH);
+      
+    }
+    
+    if (webButtonState == 0) {
+      Serial.printf("Water Stopped\n");
+      digitalWrite(Pump,LOW);
+      }
+    }
   
-  if (Moisture>1800) {
-    countDown(true, 600000);
+  if (Moisture>=1800) {
+    countDown(true, 600);
     keepCounting = true;
     nfcScanned = false; //Reset NFC scan flag
-    myDFPlayer.volume(30); // Start the player when countdown begins
-    myDFPlayer.playFolder(1, 1);
+    //myDFPlayer.volume(1); // Start the player when countdown begins
+    //myDFPlayer.playFolder(1, 1);
     //litPixel = ((PIXELCOUNT/1600.0)*Moisture);
     //PixelFill (0,litPixel,red); 
 }
@@ -276,9 +282,9 @@ if (keepCounting) {
       keepCounting = countDown();
     if (!keepCounting) {
       Serial.printf("Countdown is complete\n");
-    if (!nfcScanned && Moisture>2400) {
-      myDFPlayer.volume(30); //Set volume to 30 if NFC not scanned
-      myDFPlayer.playFolder(1, 2); //Plays the second MP3 in folder 1
+    if (!nfcScanned && Moisture>=2400) {
+      //myDFPlayer.volume(1); //Set volume to 30 if NFC not scanned
+      //myDFPlayer.playFolder(1, 2); //Plays the second MP3 in folder 1
       //litPixel = ((PIXELCOUNT/1600.0)*Moisture);
 //for (int i=0; i<litPixel; litPixel++) {
    //pixel.setPixelColor(i,red);
@@ -346,14 +352,14 @@ if (keepCounting) {
   }
 
 bool countDown(bool restart, int countStart) {
-  static int count = 600000;
+  static int count = 600;
   static unsigned long lastTime = 0;
 
   if (restart) {
     count = countStart;
   }
 
-  if (millis() - lastTime > 1000) {
+  if (millis() - lastTime > 600) {
     lastTime = millis();
     count--;
 
