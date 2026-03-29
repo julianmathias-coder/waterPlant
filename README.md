@@ -1,0 +1,1 @@
+This project uses a moisture sensor the determine when to water the plant. It has an air qualitry, tempterature, and elvation sensot as well. It has neopixels to determine when watering happens and a MMwave sensr will be added to put more logic into the project
